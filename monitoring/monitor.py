@@ -9,9 +9,14 @@ from monitoring.health_checker import (
     get_health_status,
 )
 
+from monitoring.service_checker import check_service
+from monitoring.incident_detector import IncidentDetector
+
 
 LOG_FILE = "monitoring/cloudopshub.log"
 CHECK_INTERVAL = 10
+
+incident_detector = IncidentDetector()
 
 
 def write_log(message):
@@ -25,7 +30,21 @@ def perform_health_check():
     disk = get_disk_usage()
     uptime = get_uptime()
 
-    health = get_health_status(cpu, memory, disk)
+    system_health = get_health_status(cpu, memory, disk)
+
+    nginx_running = check_service("nginx")
+
+    incident_event = incident_detector.check(
+        "nginx",
+        nginx_running
+    )
+
+    if not nginx_running:
+        overall_status = "INCIDENT"
+        nginx_status = "DOWN"
+    else:
+        nginx_status = "RUNNING"
+        overall_status = system_health
 
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -35,11 +54,21 @@ def perform_health_check():
         f"MEMORY={memory:.1f}% | "
         f"DISK={disk:.1f}% | "
         f"UPTIME={uptime} | "
-        f"STATUS={health}"
+        f"NGINX={nginx_status} | "
+        f"STATUS={overall_status}"
     )
 
     print(message)
     write_log(message)
+
+    if incident_event:
+        event_message = (
+            f"{timestamp} | "
+            f"INCIDENT EVENT: nginx {incident_event}"
+        )
+
+        print(event_message)
+        write_log(event_message)
 
 
 def main():
