@@ -11,6 +11,11 @@ from monitoring.health_checker import (
 
 from monitoring.service_checker import check_service
 from monitoring.incident_detector import IncidentDetector
+from monitoring.database import (
+    initialize_database,
+    create_incident,
+    resolve_incident,
+)
 
 
 LOG_FILE = "monitoring/cloudopshub.log"
@@ -70,8 +75,32 @@ def perform_health_check():
         print(event_message)
         write_log(event_message)
 
+        if incident_event == "CREATED":
+            incident_id = create_incident("nginx")
+
+            print(
+                f"{timestamp} | "
+                f"INCIDENT STORED: nginx ID={incident_id}"
+            )
+
+        elif incident_event == "RESOLVED":
+            resolved = resolve_incident("nginx")
+
+            if resolved:
+                print(
+                    f"{timestamp} | "
+                    f"INCIDENT RESOLVED IN DATABASE: nginx"
+                )
+            else:
+                print(
+                    f"{timestamp} | "
+                    f"WARNING: No open nginx incident found"
+                )
+
 
 def main():
+    initialize_database()
+
     print("CloudOpsHub Monitoring Service")
     print(f"Health check interval: {CHECK_INTERVAL} seconds")
     print("Press Ctrl+C to stop.")

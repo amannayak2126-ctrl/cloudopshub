@@ -8,3 +8,6 @@ terraform.tfstate
 terraform.tfstate.*
 crash.log
 .DS_Store
+*.db
+*.sqlite
+*.sqlite3
