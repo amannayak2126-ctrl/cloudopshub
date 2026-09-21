@@ -17,11 +17,17 @@ from monitoring.database import (
     resolve_incident,
 )
 
+from config import (
+    CHECK_INTERVAL,
+    LOG_FILE,
+    MONITORED_SERVICES,
+)
 
-LOG_FILE = "monitoring/cloudopshub.log"
-CHECK_INTERVAL = 10
 
-incident_detector = IncidentDetector()
+incident_detectors = {
+    service: IncidentDetector()
+    for service in MONITORED_SERVICES
+}
 
 
 def write_log(message):
@@ -35,23 +41,114 @@ def perform_health_check():
     disk = get_disk_usage()
     uptime = get_uptime()
 
-    system_health = get_health_status(cpu, memory, disk)
-
-    nginx_running = check_service("nginx")
-
-    incident_event = incident_detector.check(
-        "nginx",
-        nginx_running
+    system_health = get_health_status(
+        cpu,
+        memory,
+        disk
     )
 
-    if not nginx_running:
-        overall_status = "INCIDENT"
-        nginx_status = "DOWN"
-    else:
-        nginx_status = "RUNNING"
-        overall_status = system_health
+    timestamp = datetime.now().strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    service_statuses = []
+    service_health = {}
+
+    for service_name in MONITORED_SERVICES:
+
+        service_running = check_service(
+            service_name
+        )
+
+        service_health[service_name] = (
+            service_running
+        )
+
+        incident_event = incident_detectors[
+            service_name
+        ].check(
+            service_name,
+            service_running
+        )
+
+        service_status = (
+            "RUNNING"
+            if service_running
+            else "DOWN"
+        )
+
+        service_statuses.append(
+            f"{service_name.upper()}={service_status}"
+        )
+
+        if incident_event:
+            event_message = (
+                f"{timestamp} | "
+                f"INCIDENT EVENT: "
+                f"{service_name} "
+                f"{incident_event}"
+            )
+
+            print(event_message)
+            write_log(event_message)
+
+            if incident_event == "CREATED":
+
+                incident_id = create_incident(
+                    service_name
+                )
+
+                stored_message = (
+                    f"{timestamp} | "
+                    f"INCIDENT STORED: "
+                    f"{service_name} "
+                    f"ID={incident_id}"
+                )
+
+                print(stored_message)
+                write_log(stored_message)
+
+            elif incident_event == "RESOLVED":
+
+                resolved = resolve_incident(
+                    service_name
+                )
+
+                if resolved:
+
+                    resolved_message = (
+                        f"{timestamp} | "
+                        f"INCIDENT RESOLVED "
+                        f"IN DATABASE: "
+                        f"{service_name}"
+                    )
+
+                    print(resolved_message)
+                    write_log(resolved_message)
+
+                else:
+
+                    warning_message = (
+                        f"{timestamp} | "
+                        f"WARNING: No open "
+                        f"{service_name} "
+                        f"incident found"
+                    )
+
+                    print(warning_message)
+                    write_log(warning_message)
+
+    overall_status = system_health
+
+    if any(
+        not running
+        for running in service_health.values()
+    ):
+        overall_status = "INCIDENT"
+
+    service_status_text = " | ".join(
+        service_statuses
+    )
 
     message = (
         f"{timestamp} | "
@@ -59,50 +156,28 @@ def perform_health_check():
         f"MEMORY={memory:.1f}% | "
         f"DISK={disk:.1f}% | "
         f"UPTIME={uptime} | "
-        f"NGINX={nginx_status} | "
+        f"{service_status_text} | "
         f"STATUS={overall_status}"
     )
 
     print(message)
     write_log(message)
 
-    if incident_event:
-        event_message = (
-            f"{timestamp} | "
-            f"INCIDENT EVENT: nginx {incident_event}"
-        )
-
-        print(event_message)
-        write_log(event_message)
-
-        if incident_event == "CREATED":
-            incident_id = create_incident("nginx")
-
-            print(
-                f"{timestamp} | "
-                f"INCIDENT STORED: nginx ID={incident_id}"
-            )
-
-        elif incident_event == "RESOLVED":
-            resolved = resolve_incident("nginx")
-
-            if resolved:
-                print(
-                    f"{timestamp} | "
-                    f"INCIDENT RESOLVED IN DATABASE: nginx"
-                )
-            else:
-                print(
-                    f"{timestamp} | "
-                    f"WARNING: No open nginx incident found"
-                )
-
 
 def main():
     initialize_database()
 
     print("CloudOpsHub Monitoring Service")
-    print(f"Health check interval: {CHECK_INTERVAL} seconds")
+    print(
+        f"Health check interval: "
+        f"{CHECK_INTERVAL} seconds"
+    )
+
+    print(
+        f"Monitored services: "
+        f"{', '.join(MONITORED_SERVICES)}"
+    )
+
     print("Press Ctrl+C to stop.")
     print()
 
@@ -112,7 +187,9 @@ def main():
             time.sleep(CHECK_INTERVAL)
 
     except KeyboardInterrupt:
-        print("\nCloudOpsHub monitoring stopped.")
+        print(
+            "\nCloudOpsHub monitoring stopped."
+        )
 
 
 if __name__ == "__main__":
