@@ -1,5 +1,4 @@
 import time
-from datetime import datetime
 
 from monitoring.health_checker import (
     get_cpu_usage,
@@ -8,7 +7,6 @@ from monitoring.health_checker import (
     get_uptime,
     get_health_status,
 )
-
 from monitoring.service_checker import check_service
 from monitoring.incident_detector import IncidentDetector
 from monitoring.database import (
@@ -16,23 +14,20 @@ from monitoring.database import (
     create_incident,
     resolve_incident,
 )
+from monitoring.logger import get_logger
 
 from config import (
     CHECK_INTERVAL,
-    LOG_FILE,
     MONITORED_SERVICES,
 )
 
+
+logger = get_logger("monitor")
 
 incident_detectors = {
     service: IncidentDetector()
     for service in MONITORED_SERVICES
 }
-
-
-def write_log(message):
-    with open(LOG_FILE, "a") as log_file:
-        log_file.write(f"{message}\n")
 
 
 def perform_health_check():
@@ -44,31 +39,24 @@ def perform_health_check():
     system_health = get_health_status(
         cpu,
         memory,
-        disk
-    )
-
-    timestamp = datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
+        disk,
     )
 
     service_statuses = []
     service_health = {}
 
     for service_name in MONITORED_SERVICES:
-
         service_running = check_service(
             service_name
         )
 
-        service_health[service_name] = (
-            service_running
-        )
+        service_health[service_name] = service_running
 
         incident_event = incident_detectors[
             service_name
         ].check(
             service_name,
-            service_running
+            service_running,
         )
 
         service_status = (
@@ -83,60 +71,52 @@ def perform_health_check():
 
         if incident_event:
             event_message = (
-                f"{timestamp} | "
                 f"INCIDENT EVENT: "
                 f"{service_name} "
                 f"{incident_event}"
             )
 
             print(event_message)
-            write_log(event_message)
+            logger.info(event_message)
 
             if incident_event == "CREATED":
-
                 incident_id = create_incident(
                     service_name
                 )
 
                 stored_message = (
-                    f"{timestamp} | "
                     f"INCIDENT STORED: "
                     f"{service_name} "
                     f"ID={incident_id}"
                 )
 
                 print(stored_message)
-                write_log(stored_message)
+                logger.info(stored_message)
 
             elif incident_event == "RESOLVED":
-
                 resolved = resolve_incident(
                     service_name
                 )
 
                 if resolved:
-
                     resolved_message = (
-                        f"{timestamp} | "
                         f"INCIDENT RESOLVED "
                         f"IN DATABASE: "
                         f"{service_name}"
                     )
 
                     print(resolved_message)
-                    write_log(resolved_message)
+                    logger.info(resolved_message)
 
                 else:
-
                     warning_message = (
-                        f"{timestamp} | "
                         f"WARNING: No open "
                         f"{service_name} "
                         f"incident found"
                     )
 
                     print(warning_message)
-                    write_log(warning_message)
+                    logger.warning(warning_message)
 
     overall_status = system_health
 
@@ -151,7 +131,6 @@ def perform_health_check():
     )
 
     message = (
-        f"{timestamp} | "
         f"CPU={cpu:.1f}% | "
         f"MEMORY={memory:.1f}% | "
         f"DISK={disk:.1f}% | "
@@ -161,7 +140,7 @@ def perform_health_check():
     )
 
     print(message)
-    write_log(message)
+    logger.info(message)
 
 
 def main():
