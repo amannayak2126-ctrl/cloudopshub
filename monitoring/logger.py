@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 
 from config import LOG_FILE
 
@@ -11,7 +12,12 @@ def get_logger(name="cloudopshub"):
 
     logger.setLevel(logging.INFO)
 
-    file_handler = logging.FileHandler(LOG_FILE)
+    file_handler = RotatingFileHandler(
+        LOG_FILE,
+        maxBytes=1024 * 1024,
+        backupCount=3,
+    )
+
     formatter = logging.Formatter(
         "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
     )
